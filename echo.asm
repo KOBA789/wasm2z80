@@ -1,0 +1,75 @@
+CALL func_0
+HALT
+func_0:
+loop:
+  ; i32.const
+  LD DE,0
+  PUSH DE
+  LD DE,0
+  PUSH DE
+  ; i32.load8_u
+  POP IX
+  POP IX
+  LD BC,65533
+  ADD IX,BC
+  LD E,(IX+0)
+  LD D,0
+  PUSH DE
+  LD E,0
+  PUSH DE
+  ; i32.eqz
+  POP DE
+  LD A,D
+  OR E
+  POP DE
+  OR D
+  OR E
+  JR Z,label_0
+  LD DE,0
+  PUSH DE
+  JR label_1
+label_0:
+  LD DE,1
+  PUSH DE
+label_1:
+  LD E,0
+  PUSH DE
+  ; br_if
+  POP DE
+  LD A,D
+  OR E
+  POP DE
+  OR D
+  OR E
+  JP NZ,loop
+  ; i32.const
+  LD DE,0
+  PUSH DE
+  LD DE,0
+  PUSH DE
+  ; i32.const
+  LD DE,0
+  PUSH DE
+  LD DE,0
+  PUSH DE
+  ; i32.load8_u
+  POP IX
+  POP IX
+  LD BC,65534
+  ADD IX,BC
+  LD E,(IX+0)
+  LD D,0
+  PUSH DE
+  LD E,0
+  PUSH DE
+  ; i32.store8
+  POP DE
+  POP DE
+  POP IX
+  POP IX
+  LD BC,65535
+  ADD IX,BC
+  LD (IX+0),E
+  ; br
+  JP loop
+  RET

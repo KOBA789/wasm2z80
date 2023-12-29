@@ -1,0 +1,12 @@
+  CALL entry
+  HALT
+entry:
+  LD HL,65535
+  LD (HL),104
+  LD HL,65535
+  LD (HL),105
+  LD HL,65535
+  LD (HL),13
+  LD HL,65535
+  LD (HL),10
+  RET

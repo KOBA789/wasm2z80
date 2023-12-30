@@ -16,7 +16,15 @@ pub struct Module<'a> {
 impl<'a> Module<'a> {
     pub fn compile(&self, out: &mut Vec<u8>) {
         let mut labeler = Labeler::new();
-        writeln!(out, "LD SP,0xFFFB").unwrap();
+        writeln!(out, "LD SP,0xFFEE").unwrap();
+        writeln!(out, "LD IX,8096").unwrap();
+        writeln!(out, "LD (0xFFF2),IX").unwrap();
+        writeln!(out, "LD (0xFFF6),IX").unwrap();
+        writeln!(out, "LD (0xFFFA),IX").unwrap();
+        writeln!(out, "LD IX,0").unwrap();
+        writeln!(out, "LD (0xFFF0),IX").unwrap();
+        writeln!(out, "LD (0xFFF4),IX").unwrap();
+        writeln!(out, "LD (0xFFF8),IX").unwrap();
 
         let def = &self.functions[self.entry];
         let num_locals = def.body.get_locals_reader().unwrap().get_count();
@@ -54,7 +62,14 @@ impl<'a> Module<'a> {
     fn compile_function(&self, out: &mut Vec<u8>, labeler: &mut Labeler, def: &FunctionDef) {
         assert!(def.func_type.results().len() <= 1);
         let params = def.func_type.params();
-        let num_locals = def.body.get_locals_reader().unwrap().get_count() as usize;
+        let num_locals: usize = def
+            .body
+            .get_locals_reader()
+            .unwrap()
+            .into_iter()
+            .map(|result| result.unwrap())
+            .map(|(amt, _ty)| amt as usize)
+            .sum();
         let has_result = def.func_type.results().len() == 1;
         let operators = def.body.get_operators_reader().unwrap();
         let mut label_stack: Vec<Label> = vec![];
@@ -97,6 +112,28 @@ impl<'a> Module<'a> {
                     writeln!(out, "  LD A,(IX+3)").unwrap();
                     writeln!(out, "  LD (IY+{}),A", d + 3).unwrap();
                 }
+                Operator::GlobalGet { global_index } => {
+                    let addr = 0xFFF8 - global_index * 4;
+                    writeln!(out, "  ; global.get {}", global_index).unwrap();
+                    writeln!(out, "  LD IX,{addr}").unwrap();
+                    writeln!(out, "  LD E,(IX+{})", 2).unwrap();
+                    writeln!(out, "  LD D,(IX+{})", 3).unwrap();
+                    writeln!(out, "  PUSH DE").unwrap();
+                    writeln!(out, "  LD E,(IX+{})", 0).unwrap();
+                    writeln!(out, "  LD D,(IX+{})", 1).unwrap();
+                    writeln!(out, "  PUSH DE").unwrap();
+                }
+                Operator::GlobalSet { global_index } => {
+                    let addr = 0xFFF8 - global_index * 4;
+                    writeln!(out, "  ; global.set {}", global_index).unwrap();
+                    writeln!(out, "  LD IX,{addr}").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  LD (IX+{}),E", 0).unwrap();
+                    writeln!(out, "  LD (IX+{}),D", 1).unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  LD (IX+{}),E", 2).unwrap();
+                    writeln!(out, "  LD (IX+{}),D", 3).unwrap();
+                }
                 Operator::I32Const { value } => {
                     let lower = value as u16;
                     let upper = (value >> 16) as u16;
@@ -116,6 +153,34 @@ impl<'a> Module<'a> {
                     writeln!(out, "  LD BC,{offset}").unwrap();
                     writeln!(out, "  ADD IX,BC").unwrap();
                     writeln!(out, "  LD (IX+0),E").unwrap();
+                }
+                Operator::I32Store { memarg } => {
+                    let offset = memarg.offset;
+                    writeln!(out, "  ; i32.store").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  LD BC,{offset}").unwrap();
+                    writeln!(out, "  ADD IX,BC").unwrap();
+                    writeln!(out, "  LD (IX+0),C").unwrap();
+                    writeln!(out, "  LD (IX+1),B").unwrap();
+                    writeln!(out, "  LD (IX+2),E").unwrap();
+                    writeln!(out, "  LD (IX+3),D").unwrap();
+                }
+                Operator::I32Load { memarg } => {
+                    let offset = memarg.offset;
+                    writeln!(out, "  ; i32.load").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  LD BC,{offset}").unwrap();
+                    writeln!(out, "  ADD IX,BC").unwrap();
+                    writeln!(out, "  LD C,(IX+0)").unwrap();
+                    writeln!(out, "  LD B,(IX+1)").unwrap();
+                    writeln!(out, "  PUSH BC").unwrap();
+                    writeln!(out, "  LD C,(IX+2)").unwrap();
+                    writeln!(out, "  LD B,(IX+3)").unwrap();
+                    writeln!(out, "  PUSH BC").unwrap();
                 }
                 Operator::I32Load8U { memarg } => {
                     let offset = memarg.offset;
@@ -166,6 +231,21 @@ impl<'a> Module<'a> {
                     writeln!(out, "  PUSH IX").unwrap();
                     writeln!(out, "  POP DE").unwrap();
                     writeln!(out, "  ADC HL,DE").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                }
+                Operator::I32Sub => {
+                    writeln!(out, "  ; i32.sub").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+
+                    writeln!(out, "  AND A").unwrap();
+                    writeln!(out, "  SBC HL,BC").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "  PUSH IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  SBC HL,DE").unwrap();
                     writeln!(out, "  PUSH HL").unwrap();
                 }
                 Operator::I32And => {
@@ -251,6 +331,35 @@ impl<'a> Module<'a> {
                     writeln!(out, "  LD HL,0").unwrap();
                     writeln!(out, "  PUSH HL").unwrap();
                 }
+                Operator::I32GeU => {
+                    let gt = labeler.next();
+                    let after = labeler.next();
+
+                    writeln!(out, "  ; i32.lt_u").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+
+                    writeln!(out, "  AND A").unwrap();
+                    writeln!(out, "  SBC HL,BC").unwrap();
+                    writeln!(out, "  LD B,H").unwrap();
+                    writeln!(out, "  LD C,L").unwrap();
+                    writeln!(out, "  PUSH IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  SBC HL,DE").unwrap();
+
+                    writeln!(out, "  JR C,{gt}").unwrap();
+                    writeln!(out, "  LD HL,1").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "  JR {after}").unwrap();
+                    writeln!(out, "{gt}:").unwrap();
+                    writeln!(out, "  LD HL,0").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "{after}:").unwrap();
+                    writeln!(out, "  LD HL,0").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                }
                 Operator::I32Ne => {
                     let ne = labeler.next();
                     let after = labeler.next();
@@ -327,7 +436,13 @@ impl<'a> Module<'a> {
                     assert_eq!(blockty, BlockType::Empty);
                     let label = labeler.next();
                     label_stack.push(label.clone());
-                    writeln!(out, "{label}:").unwrap();
+                    writeln!(out, "{label}: ; loop").unwrap();
+                }
+                Operator::Block { blockty } => {
+                    assert_eq!(blockty, BlockType::Empty);
+                    let label = labeler.next();
+                    label_stack.push(label.clone());
+                    writeln!(out, "{label}: ; block").unwrap();
                 }
                 Operator::Call { function_index } => {
                     let def = &self.functions[function_index as usize];
@@ -355,6 +470,17 @@ impl<'a> Module<'a> {
                         writeln!(out, "  PUSH BC").unwrap();
                         writeln!(out, "  PUSH DE").unwrap();
                     }
+                }
+                Operator::Return => {
+                    if has_result {
+                        writeln!(out, "  POP DE").unwrap();
+                        writeln!(out, "  POP BC").unwrap();
+                        writeln!(out, "  POP HL").unwrap();
+                        writeln!(out, "  PUSH BC").unwrap();
+                        writeln!(out, "  PUSH DE").unwrap();
+                        writeln!(out, "  PUSH HL").unwrap();
+                    }
+                    writeln!(out, "  RET").unwrap();
                 }
                 Operator::End => {}
                 op => unimplemented!("operator {:?} not implemented", op),

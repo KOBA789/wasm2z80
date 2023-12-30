@@ -46,6 +46,20 @@ impl<'a> Module<'a> {
                     writeln!(out, "  LD D,(IY+{})", d+1).unwrap();
                     writeln!(out, "  PUSH DE").unwrap();
                 }
+                Operator::LocalTee { local_index } => {
+                    let d = params.len() as u32 * 4 - local_index * 4;
+                    writeln!(out, "  ; local.tee {}", local_index).unwrap();
+                    writeln!(out, "  LD IX,0").unwrap();
+                    writeln!(out, "  ADD IX,SP").unwrap();
+                    writeln!(out, "  LD A,(IX+0)").unwrap();
+                    writeln!(out, "  LD (IY+{}),A", d+0).unwrap();
+                    writeln!(out, "  LD A,(IX+1)").unwrap();
+                    writeln!(out, "  LD (IY+{}),A", d+1).unwrap();
+                    writeln!(out, "  LD A,(IX+2)").unwrap();
+                    writeln!(out, "  LD (IY+{}),A", d+2).unwrap();
+                    writeln!(out, "  LD A,(IX+3)").unwrap();
+                    writeln!(out, "  LD (IY+{}),A", d+3).unwrap();
+                },
                 Operator::I32Const { value } => {
                     let lower = value as u16;
                     let upper = (value >> 16) as u16;
@@ -107,6 +121,7 @@ impl<'a> Module<'a> {
                     writeln!(out, "  POP IX").unwrap();
                     writeln!(out, "  POP HL").unwrap();
 
+                    writeln!(out, "  AND A").unwrap();
                     writeln!(out, "  ADD HL,BC").unwrap();
                     writeln!(out, "  PUSH HL").unwrap();
 
@@ -116,6 +131,86 @@ impl<'a> Module<'a> {
                     writeln!(out, "  ADC HL,DE").unwrap();
                     writeln!(out, "  PUSH HL").unwrap();
                 }
+                Operator::I32And => {
+                    writeln!(out, "  ; i32.and").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+
+                    writeln!(out, "  LD A,L").unwrap();
+                    writeln!(out, "  AND C").unwrap();
+                    writeln!(out, "  LD L,A").unwrap();
+                    writeln!(out, "  LD A,H").unwrap();
+                    writeln!(out, "  AND B").unwrap();
+                    writeln!(out, "  LD H,A").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+
+                    writeln!(out, "  PUSH IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  LD A,L").unwrap();
+                    writeln!(out, "  AND E").unwrap();
+                    writeln!(out, "  LD L,A").unwrap();
+                    writeln!(out, "  LD A,H").unwrap();
+                    writeln!(out, "  AND D").unwrap();
+                    writeln!(out, "  LD H,A").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                }
+                Operator::I32GtU => {
+                    let gt = labeler.next();
+                    let after = labeler.next();
+
+                    writeln!(out, "  ; i32.gt_u").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+
+                    writeln!(out, "  AND A").unwrap();
+                    writeln!(out, "  SBC HL,BC").unwrap();
+                    writeln!(out, "  LD B,H").unwrap();
+                    writeln!(out, "  LD C,L").unwrap();
+                    writeln!(out, "  PUSH IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  SBC HL,DE").unwrap();
+
+                    writeln!(out, "  JR C,{gt}").unwrap();
+                    writeln!(out, "  LD HL,0").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "  JR {after}").unwrap();
+                    writeln!(out, "{gt}:").unwrap();
+                    writeln!(out, "  LD HL,1").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "{after}:").unwrap();
+                    writeln!(out, "  LD HL,0").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                },
+                Operator::Select => {
+                    let zero = labeler.next();
+                    let after = labeler.next();
+                    writeln!(out, "  ; select").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  LD A,D").unwrap();
+                    writeln!(out, "  OR E").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  OR D").unwrap();
+                    writeln!(out, "  OR E").unwrap();
+
+                    writeln!(out, "  JR Z,{zero}").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+                    writeln!(out, "  JR {after}").unwrap();
+                    writeln!(out, "{zero}:").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "{after}:").unwrap();
+                    writeln!(out, "  PUSH BC").unwrap();
+                    writeln!(out, "  PUSH DE").unwrap();
+                },
                 Operator::Br { relative_depth } => {
                     assert_eq!(relative_depth, 0);
                     writeln!(out, "  ; br").unwrap();
@@ -137,9 +232,16 @@ impl<'a> Module<'a> {
                     writeln!(out, "{loop_label}:").unwrap();
                 }
                 Operator::Call { function_index } => {
-                    let params = self.functions[function_index as usize].func_type.params();
-                    let results = self.functions[function_index as usize].func_type.results();
+                    let def = &self.functions[function_index as usize];
+                    let num_locals = def.body.get_locals_reader().unwrap().get_count();
+                    let params = def.func_type.params();
+                    let results = def.func_type.results();
                     writeln!(out, "  ; call").unwrap();
+                    writeln!(out, "  LD BC,0").unwrap();
+                    for _ in 0..num_locals {
+                        writeln!(out, "  PUSH BC").unwrap();
+                        writeln!(out, "  PUSH BC").unwrap();
+                    }
                     writeln!(out, "  PUSH IY").unwrap();
                     writeln!(out, "  CALL func_{}", function_index).unwrap();
                     if results.len() > 0 {
@@ -147,7 +249,7 @@ impl<'a> Module<'a> {
                         writeln!(out, "  POP BC").unwrap();
                     }
                     writeln!(out, "  POP IY").unwrap();
-                    for _ in 0..params.len() {
+                    for _ in 0..(params.len() + num_locals as usize) {
                         writeln!(out, "  POP BC").unwrap();
                         writeln!(out, "  POP BC").unwrap();
                     }

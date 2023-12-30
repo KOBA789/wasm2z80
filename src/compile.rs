@@ -16,7 +16,8 @@ pub struct Module<'a> {
 impl<'a> Module<'a> {
     pub fn compile(&self, out: &mut Vec<u8>) {
         let mut labeler = Labeler::new();
-        writeln!(out, "LD SP,0xFFEE").unwrap();
+        writeln!(out, "LD SP,0xFFE8").unwrap();
+        /*
         writeln!(out, "LD IX,8096").unwrap();
         writeln!(out, "LD (0xFFF2),IX").unwrap();
         writeln!(out, "LD (0xFFF6),IX").unwrap();
@@ -25,6 +26,7 @@ impl<'a> Module<'a> {
         writeln!(out, "LD (0xFFF0),IX").unwrap();
         writeln!(out, "LD (0xFFF4),IX").unwrap();
         writeln!(out, "LD (0xFFF8),IX").unwrap();
+        */
 
         let def = &self.functions[self.entry];
         let num_locals = def.body.get_locals_reader().unwrap().get_count();
@@ -73,6 +75,7 @@ impl<'a> Module<'a> {
         let has_result = def.func_type.results().len() == 1;
         let operators = def.body.get_operators_reader().unwrap();
         let mut label_stack: Vec<Label> = vec![];
+        let mut end_stack: Vec<Option<Label>> = vec![];
         writeln!(out, "  LD IY,0").unwrap();
         writeln!(out, "  ADD IY,SP").unwrap();
         for op in operators {
@@ -158,13 +161,13 @@ impl<'a> Module<'a> {
                     let offset = memarg.offset;
                     writeln!(out, "  ; i32.store").unwrap();
                     writeln!(out, "  POP DE").unwrap();
-                    writeln!(out, "  POP BC").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
                     writeln!(out, "  POP IX").unwrap();
                     writeln!(out, "  POP IX").unwrap();
                     writeln!(out, "  LD BC,{offset}").unwrap();
                     writeln!(out, "  ADD IX,BC").unwrap();
-                    writeln!(out, "  LD (IX+0),C").unwrap();
-                    writeln!(out, "  LD (IX+1),B").unwrap();
+                    writeln!(out, "  LD (IX+0),L").unwrap();
+                    writeln!(out, "  LD (IX+1),H").unwrap();
                     writeln!(out, "  LD (IX+2),E").unwrap();
                     writeln!(out, "  LD (IX+3),D").unwrap();
                 }
@@ -274,6 +277,35 @@ impl<'a> Module<'a> {
                     writeln!(out, "  PUSH HL").unwrap();
                 }
                 Operator::I32GtU => {
+                    let gt = labeler.next();
+                    let after = labeler.next();
+
+                    writeln!(out, "  ; i32.gt_u").unwrap();
+                    writeln!(out, "  POP IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  POP DE").unwrap();
+                    writeln!(out, "  POP BC").unwrap();
+
+                    writeln!(out, "  AND A").unwrap();
+                    writeln!(out, "  SBC HL,BC").unwrap();
+                    writeln!(out, "  LD B,H").unwrap();
+                    writeln!(out, "  LD C,L").unwrap();
+                    writeln!(out, "  PUSH IX").unwrap();
+                    writeln!(out, "  POP HL").unwrap();
+                    writeln!(out, "  SBC HL,DE").unwrap();
+
+                    writeln!(out, "  JR C,{gt}").unwrap();
+                    writeln!(out, "  LD HL,0").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "  JR {after}").unwrap();
+                    writeln!(out, "{gt}:").unwrap();
+                    writeln!(out, "  LD HL,1").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                    writeln!(out, "{after}:").unwrap();
+                    writeln!(out, "  LD HL,0").unwrap();
+                    writeln!(out, "  PUSH HL").unwrap();
+                }
+                Operator::I32GtS => {
                     let gt = labeler.next();
                     let after = labeler.next();
 
@@ -437,12 +469,13 @@ impl<'a> Module<'a> {
                     let label = labeler.next();
                     label_stack.push(label.clone());
                     writeln!(out, "{label}: ; loop").unwrap();
+                    end_stack.push(None);
                 }
                 Operator::Block { blockty } => {
                     assert_eq!(blockty, BlockType::Empty);
                     let label = labeler.next();
                     label_stack.push(label.clone());
-                    writeln!(out, "{label}: ; block").unwrap();
+                    end_stack.push(Some(label));
                 }
                 Operator::Call { function_index } => {
                     let def = &self.functions[function_index as usize];
@@ -482,7 +515,11 @@ impl<'a> Module<'a> {
                     }
                     writeln!(out, "  RET").unwrap();
                 }
-                Operator::End => {}
+                Operator::End => {
+                    if let Some(block_label) = end_stack.pop().flatten() {
+                        writeln!(out, "{block_label}: ; block").unwrap();
+                    }
+                }
                 op => unimplemented!("operator {:?} not implemented", op),
             }
         }

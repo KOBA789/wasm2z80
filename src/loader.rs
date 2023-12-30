@@ -1,17 +1,9 @@
 use wasmparser::{Export, FuncType, FunctionBody, Payload, RecGroup, SectionLimited};
 
+use crate::compile::{Module, FunctionDef};
+
 struct FunctionDecl {
     typ: FuncType,
-}
-
-pub struct FunctionDef<'a> {
-    pub func_type: FuncType,
-    pub body: FunctionBody<'a>,
-}
-
-pub struct Module<'a> {
-    pub entry: usize,
-    pub functions: Vec<FunctionDef<'a>>,
 }
 
 #[derive(Default)]
